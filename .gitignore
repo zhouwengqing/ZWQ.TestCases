@@ -7,3 +7,5 @@ obj/
 .vs/
 *.DotSettings.user
 *.db
+*.db-shm
+*.db-wal
