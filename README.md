@@ -15,8 +15,10 @@ ZWQ.TestCases.sln
 │   │   └── Options/                      # 配置 POCO
 │   └── ZWQ.TestCases.Redis/              # Redis 扩展库
 │       ├── Connection/                   # 连接管理器（单例 + 自动重连）
-│       ├── Caching/                      # 分布式缓存服务
+│       ├── Caching/                      # 分布式缓存服务（含穿透/击穿/雪崩防护）
+│       ├── BloomFilter/                  # 布隆过滤器（穿透防护第一线）
 │       ├── Locking/                      # 分布式锁
+│       ├── Monitoring/                   # 心跳监控（BackgroundService）
 │       └── Options/                      # 配置 POCO
 └── samples/
     └── ZWQ.TestCases.RabbitMQ.Sample/    # 可运行测试项目（Swagger UI）
@@ -40,6 +42,8 @@ ZWQ.TestCases.sln
 - **缓存穿透防护** — 工厂返回 null 时缓存 `__NULL__` 占位标记（短 TTL），阻止恶意/异常请求穿透到数据库
 - **缓存击穿防护** — `GetOrSetAsync` 缓存未命中时自动抢分布式锁（SET NX），仅一个线程回源查库，其余线程等待后重读缓存
 - **缓存雪崩防护** — 写入缓存时 TTL 自动加上随机抖动（默认 ±10%），避免大批 key 同时过期
+- **布隆过滤器** — `IBloomFilter` 基于 Redis BitArray + 双重哈希，O(K) 判断元素是否存在，作为穿透防护的第一道防线
+- **心跳监控** — `RedisHealthMonitor` 定时 PING 检测，记录延迟/成功率/连续失败，状态变化自动告警
 - **一行注册** — `services.AddZwqRedis()`
 
 ## 快速开始
@@ -105,6 +109,13 @@ dotnet run
 | Redis | `GET /api/redis/getorset/{key}` | 不存在则加载并缓存（含三重防护） |
 | Redis | `POST /api/redis/counter/{key}` | 原子计数器 |
 | Redis | `POST /api/redis/lock/{key}` | 分布式锁测试 |
+| Bloom | `POST /api/bloom/init/{key}` | 初始化布隆过滤器 |
+| Bloom | `POST /api/bloom/add/{key}` | 添加元素 |
+| Bloom | `GET /api/bloom/check/{key}/{item}` | 检查元素是否存在 |
+| Bloom | `GET /api/bloom/info/{key}` | 过滤器统计信息 |
+| Monitor | `GET /api/redis-monitor/status` | 健康状态总览 |
+| Monitor | `GET /api/redis-monitor/history` | 最近心跳记录 |
+| Monitor | `GET /api/redis-monitor/health` | 简易健康探针 |
 
 ## Redis 缓存三重防护
 
@@ -150,6 +161,42 @@ key3: TTL = 30 分钟 → 实际 30.2~33 分钟
 ```
 
 配置项：`ExpirationJitterPercent`（抖动百分比，0~50）。
+
+## 布隆过滤器（穿透防护第一线）
+
+在缓存穿透防护中，空值缓存是第二道防线。第一道防线是**布隆过滤器**：在查缓存之前先判断 key 是否合法，直接拦截掉一定不存在的请求。
+
+```
+请求 → 布隆过滤器检查
+  ├─ "一定不存在" → 直接拒绝（0 次 DB 查询）
+  └─ "可能存在"   → 正常流程：查缓存 → 查库 → 写缓存
+```
+
+使用方式：
+
+```csharp
+// 1. 初始化（预期 10 万条数据，1% 误判率）
+await bloomFilter.InitializeAsync("user_ids", expectedInsertions: 100000, falsePositiveRate: 0.01);
+
+// 2. 批量灌入已有数据（应用启动时从 DB 加载）
+await bloomFilter.AddManyAsync("user_ids", existingUserIds);
+
+// 3. 查询前检查
+if (!await bloomFilter.ContainsAsync("user_ids", requestedId))
+    return null; // 一定不存在，直接返回
+```
+
+原理：使用 K 个哈希函数将元素映射到 M 位的 BitArray（Redis SETBIT/GETBIT），判断不存在 100% 准确，判断可能存在有可控误判率。
+
+## Redis 心跳监控
+
+`RedisHealthMonitor` 是一个 `BackgroundService`，应用启动后自动运行：
+
+- 每 15 秒 PING 一次 Redis，记录延迟和成功/失败
+- 连接状态变化时自动输出告警日志（断线/恢复）
+- 连续失败时降低日志频率（每 10 次打一次），避免日志轰炸
+- 通过 `/api/redis-monitor/status` 查看完整健康报告
+- 通过 `/api/redis-monitor/health` 作为负载均衡健康探针
 
 ## 环境要求
 
