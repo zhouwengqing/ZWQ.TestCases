@@ -95,8 +95,7 @@ public class RedisOptions
         if (DefaultDatabase > 0)
             parts.Add($"defaultDatabase={DefaultDatabase}");
 
-        if (!string.IsNullOrEmpty(KeyPrefix))
-            parts.Add($"serviceName={KeyPrefix}");
+        // KeyPrefix 在应用层使用（RedisCacheService.PrefixKey），不放入连接字符串
 
         return string.Join(",", parts);
     }
