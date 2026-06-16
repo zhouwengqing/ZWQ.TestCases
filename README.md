@@ -1,42 +1,42 @@
 # WyInfo.RabbitMQ
 
-A production-ready RabbitMQ extension library for .NET 10, built from real-world e-commerce backend experience.
+.NET 10 生产级 RabbitMQ 扩展库，源自真实电商后台项目。
 
-## Features
+## 核心特性
 
-- **Generic Consumer Base Class** — `BaseMessageConsumer<T>` encapsulates connection management, message consumption, retry, idempotency, dead letter routing, connection recovery, and health checks. Subclasses only implement two methods.
-- **Claim-then-Process Idempotency** — Uses database unique index as a distributed mutex lock. INSERT a claim record (Status=0) before processing, UPDATE to final status after. Eliminates the check-then-act race condition.
-- **Automatic Connection Recovery** — Startup retry (survives RabbitMQ not being ready), `AutomaticRecoveryEnabled` for TCP reconnection, event-driven consumer rebuild, and 30-second health check loop as a fallback.
-- **Transient Error Detection** — Distinguishes database/network transient errors from business logic errors. Transient errors trigger requeue instead of dead letter, so messages auto-retry when the database recovers.
-- **Dead Letter Queue** — Per-consumer DLX queues with a shared `DeadLetterConsumerService` for logging and alerting.
-- **One-line DI Registration** — `services.AddWyInfoRabbitMq<YourDbContext>()` registers all infrastructure.
+- **泛型消费者基类** — `BaseMessageConsumer<T>` 封装连接管理、消息消费、重试、幂等、死信路由、连接恢复、健康检查。子类只需实现两个方法。
+- **先占位后处理幂等** — 利用数据库唯一索引做分布式互斥锁，INSERT 占位记录（Status=0）后再执行业务，彻底消除 check-then-act 竞态条件。
+- **自动连接恢复** — 启动重试（容忍 RabbitMQ 未就绪）+ `AutomaticRecoveryEnabled` TCP 重连 + 事件驱动消费者重建 + 30 秒健康检查兜底。
+- **瞬态错误检测** — 区分数据库/网络瞬态故障和业务逻辑错误，瞬态错误自动重新入队而非进死信，数据库恢复后消息自动被处理。
+- **死信队列** — 每个消费者独立 DLX 队列，配合 `DeadLetterConsumerService` 记录日志、等待人工介入。
+- **一行注册** — `services.AddWyInfoRabbitMq<YourDbContext>()` 完成所有基础设施注册。
 
-## Architecture
+## 架构
 
 ```
-Publisher                        Consumer (BackgroundService)
-   │                                   │
-   │ Publish(msg, exchange, key)       │
-   ▼                                   │
+发布者                          消费者（BackgroundService）
+  │                                    │
+  │ Publish(msg, exchange, key)        │
+  ▼                                    │
 RabbitMqPublisher ──▶ Exchange ──▶ Queue ──▶ BaseMessageConsumer<T>
-                      (Topic)     (durable)        │
-                                                   ├─ TryClaim (INSERT Status=0)
-                                                   ├─ ProcessMessage (with retry)
-                                                   ├─ Complete (UPDATE Status=1)
-                                                   └─ On failure → DLX → DeadLetterConsumer
+                     (Topic)     (持久化)        │
+                                                 ├─ TryClaim（INSERT 占位 Status=0）
+                                                 ├─ ProcessMessage（带重试）
+                                                 ├─ Complete（UPDATE Status=1）
+                                                 └─ 失败 → DLX → DeadLetterConsumer
 ```
 
-## Quick Start
+## 快速开始
 
-### 1. Install
+### 1. 引用项目
 
 ```bash
 dotnet add reference src/WyInfo.RabbitMQ/WyInfo.RabbitMQ.csproj
 ```
 
-### 2. Configure DbContext
+### 2. 配置 DbContext
 
-Add `MqProcessedMessage` to your DbContext:
+将 `MqProcessedMessage` 加入你的 DbContext：
 
 ```csharp
 public class AppDbContext : DbContext
@@ -56,7 +56,7 @@ public class AppDbContext : DbContext
 }
 ```
 
-### 3. Register Services
+### 3. 注册服务
 
 ```csharp
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection("RabbitMq"));
@@ -65,7 +65,7 @@ builder.Services.AddHostedService<OrderConsumerService>();
 builder.Services.AddHostedService<DeadLetterConsumerService>();
 ```
 
-### 4. Create a Consumer
+### 4. 创建消费者
 
 ```csharp
 public class OrderConsumerService : BaseMessageConsumer<OrderSubmittedEvent>
@@ -90,7 +90,7 @@ public class OrderConsumerService : BaseMessageConsumer<OrderSubmittedEvent>
 
     protected override async Task ProcessMessageAsync(OrderSubmittedEvent message)
     {
-        // Your business logic here
+        // 你的业务逻辑
     }
 
     protected override string GetMessageId(OrderSubmittedEvent message)
@@ -98,7 +98,7 @@ public class OrderConsumerService : BaseMessageConsumer<OrderSubmittedEvent>
 }
 ```
 
-### 5. Publish Messages
+### 5. 发布消息
 
 ```csharp
 app.MapPost("/orders", (IMessagePublisher publisher, CreateOrderDto dto) =>
@@ -131,51 +131,53 @@ app.MapPost("/orders", (IMessagePublisher publisher, CreateOrderDto dto) =>
 }
 ```
 
-## Idempotency: Claim-then-Process
+## 幂等机制：先占位后处理
 
-Traditional check-then-act has a race condition window between SELECT and INSERT. This library uses INSERT-first with a unique index constraint:
+传统的 check-then-act（先查后写）存在竞态窗口：SELECT 和 INSERT 之间如果消息被重复投递，会导致业务逻辑执行两次。
+
+本库采用 INSERT-first + 唯一索引互斥：
 
 ```
-1. TryClaimAsync → INSERT record (Status=0)
-   ├─ Success → proceed to business logic
-   └─ Unique constraint violation → skip (already claimed)
-2. ProcessMessageAsync → execute business logic
-3. CompleteAsync → UPDATE to Status=1 (success) or Status=2 (failure)
+1. TryClaimAsync → INSERT 占位记录（Status=0）
+   ├─ 成功 → 执行业务逻辑
+   └─ 唯一索引冲突 → 跳过（已被其他消费者处理）
+2. ProcessMessageAsync → 执行业务逻辑（带重试）
+3. CompleteAsync → UPDATE 为 Status=1（成功）或 Status=2（失败）
 ```
 
-A 30-minute timeout cleanup prevents stale claim records from blocking reprocessing if a consumer crashes between step 1 and step 3.
+如果消费者在步骤 1 和 3 之间崩溃，30 分钟超时清理机制会自动清除卡住的占位记录，允许重新抢占。
 
-## Project Structure
+## 项目结构
 
 ```
 src/WyInfo.RabbitMQ/
 ├── Connection/
-│   └── RabbitMqConnectionManager.cs    # Singleton TCP connection with retry
+│   └── RabbitMqConnectionManager.cs    # 单例 TCP 连接 + 启动重试
 ├── Consuming/
-│   ├── BaseMessageConsumer.cs          # Generic consumer base class
-│   ├── DeadLetterConsumerService.cs    # Dead letter queue consumer
-│   └── QueueBindingConfiguration.cs    # Per-consumer topology config
+│   ├── BaseMessageConsumer.cs          # 泛型消费者基类
+│   ├── DeadLetterConsumerService.cs    # 死信队列消费者
+│   └── QueueBindingConfiguration.cs    # 队列拓扑配置
 ├── Idempotency/
-│   ├── IMessageIdempotencyStore.cs     # Idempotency interface
-│   ├── EfMessageIdempotencyStore.cs    # EF Core implementation
-│   └── MqProcessedMessage.cs           # Database entity
+│   ├── IMessageIdempotencyStore.cs     # 幂等接口
+│   ├── EfMessageIdempotencyStore.cs    # EF Core 实现（泛型 DbContext）
+│   └── MqProcessedMessage.cs           # 数据库实体
 ├── Options/
-│   └── RabbitMqOptions.cs             # Configuration POCO
+│   └── RabbitMqOptions.cs             # 配置 POCO
 ├── Publishing/
-│   ├── IMessagePublisher.cs            # Publisher interface
-│   └── RabbitMqPublisher.cs           # Publisher implementation
-└── ServiceCollectionExtensions.cs      # DI registration
+│   ├── IMessagePublisher.cs            # 发布者接口
+│   └── RabbitMqPublisher.cs           # 发布者实现
+└── ServiceCollectionExtensions.cs      # DI 注册扩展方法
 
 samples/WyInfo.RabbitMQ.Sample/
-└── Program.cs                          # Complete working example
+└── Program.cs                          # 完整可运行示例
 ```
 
-## Requirements
+## 环境要求
 
 - .NET 10
-- RabbitMQ 3.x with management plugin
+- RabbitMQ 3.x（建议开启 management 插件）
 - Entity Framework Core 10
 
-## License
+## 许可证
 
 MIT
