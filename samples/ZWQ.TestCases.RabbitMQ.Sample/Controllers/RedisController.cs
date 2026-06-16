@@ -53,6 +53,8 @@ public class RedisController : ControllerBase
     /// <summary>
     /// 设置缓存
     /// </summary>
+    /// <param name="request">缓存设置请求（键名、值、过期时间）</param>
+    /// <returns>操作结果</returns>
     [HttpPost("set")]
     public async Task<IActionResult> SetCache([FromBody] SetCacheRequest request)
     {
@@ -71,6 +73,8 @@ public class RedisController : ControllerBase
     /// <summary>
     /// 获取缓存
     /// </summary>
+    /// <param name="key">缓存键名</param>
+    /// <returns>缓存值，不存在时返回 404</returns>
     [HttpGet("get/{key}")]
     public async Task<IActionResult> GetCache(string key)
     {
@@ -84,6 +88,8 @@ public class RedisController : ControllerBase
     /// <summary>
     /// 删除缓存
     /// </summary>
+    /// <param name="key">缓存键名</param>
+    /// <returns>是否删除成功</returns>
     [HttpDelete("delete/{key}")]
     public async Task<IActionResult> DeleteCache(string key)
     {
@@ -94,6 +100,8 @@ public class RedisController : ControllerBase
     /// <summary>
     /// 检查缓存是否存在
     /// </summary>
+    /// <param name="key">缓存键名</param>
+    /// <returns>是否存在</returns>
     [HttpGet("exists/{key}")]
     public async Task<IActionResult> Exists(string key)
     {
@@ -104,8 +112,10 @@ public class RedisController : ControllerBase
     // ====== 高级操作 ======
 
     /// <summary>
-    /// GetOrSet 测试 — 不存在时自动创建
+    /// GetOrSet 测试 — 不存在时自动创建（含穿透/击穿/雪崩三重防护）
     /// </summary>
+    /// <param name="key">缓存键名</param>
+    /// <returns>缓存数据（可能来自缓存或工厂方法）</returns>
     [HttpGet("getorset/{key}")]
     public async Task<IActionResult> GetOrSet(string key)
     {
@@ -125,8 +135,12 @@ public class RedisController : ControllerBase
     }
 
     /// <summary>
-    /// 原子计数器测试
+    /// 原子计数器测试（递增或递减）
     /// </summary>
+    /// <param name="key">计数器键名</param>
+    /// <param name="action">操作类型: increment（递增）或 decrement（递减）</param>
+    /// <param name="value">步长，默认 1</param>
+    /// <returns>操作后的当前值</returns>
     [HttpPost("counter/{key}")]
     public async Task<IActionResult> Counter(string key, [FromQuery] string action = "increment", [FromQuery] long value = 1)
     {
@@ -142,8 +156,11 @@ public class RedisController : ControllerBase
     // ====== 分布式锁测试 ======
 
     /// <summary>
-    /// 测试分布式锁
+    /// 测试分布式锁（立即返回，不等待）
     /// </summary>
+    /// <param name="key">锁名称</param>
+    /// <param name="holdSeconds">持锁时长（秒），默认 5</param>
+    /// <returns>获取成功返回 200，被占用返回 409</returns>
     [HttpPost("lock/{key}")]
     public async Task<IActionResult> TestLock(string key, [FromQuery] int holdSeconds = 5)
     {
@@ -164,8 +181,11 @@ public class RedisController : ControllerBase
     }
 
     /// <summary>
-    /// 等待式分布式锁测试（会等待重试）
+    /// 等待式分布式锁测试（获取失败时会等待重试）
     /// </summary>
+    /// <param name="key">锁名称</param>
+    /// <param name="waitSeconds">最大等待时间（秒），默认 10</param>
+    /// <returns>获取成功返回 200，超时返回 409</returns>
     [HttpPost("lock-wait/{key}")]
     public async Task<IActionResult> TestLockWithWait(string key, [FromQuery] int waitSeconds = 10)
     {
@@ -183,10 +203,20 @@ public class RedisController : ControllerBase
 
 // ====== DTO ======
 
+/// <summary>
+/// 设置缓存请求
+/// </summary>
 public class SetCacheRequest
 {
+    /// <summary>缓存键名</summary>
     public string Key { get; set; } = "test_key";
+
+    /// <summary>字符串值（与 ObjectValue 二选一）</summary>
     public string? Value { get; set; }
+
+    /// <summary>对象值（序列化为 JSON 存储，与 Value 二选一）</summary>
     public object? ObjectValue { get; set; }
+
+    /// <summary>过期时间（秒），不传则使用默认值</summary>
     public int? ExpirationSeconds { get; set; }
 }

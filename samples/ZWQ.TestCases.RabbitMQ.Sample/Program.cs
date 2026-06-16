@@ -44,6 +44,11 @@ builder.Services.AddSwaggerGen(c =>
         Version = "v1",
         Description = "ZWQ 测试用例集合 — RabbitMQ 消息队列 / Redis 缓存 / 分布式锁测试接口"
     });
+
+    // 加载 XML 注释文件
+    var basePath = AppContext.BaseDirectory;
+    foreach (var xml in Directory.GetFiles(basePath, "*.xml"))
+        c.IncludeXmlComments(xml, includeControllerXmlComments: true);
 });
 
 var app = builder.Build();
