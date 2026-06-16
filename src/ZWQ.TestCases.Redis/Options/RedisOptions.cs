@@ -45,6 +45,34 @@ public class RedisOptions
     /// <summary>默认缓存过期时间（分钟）</summary>
     public int DefaultExpirationMinutes { get; set; } = 30;
 
+    // ---------- 缓存安全防护 ----------
+
+    /// <summary>
+    /// 【雪崩防护】TTL 随机抖动百分比（0~50），设为 10 表示实际过期时间在 ±10% 范围浮动
+    /// 避免大量 key 同时过期导致数据库瞬时压力
+    /// </summary>
+    public int ExpirationJitterPercent { get; set; } = 10;
+
+    /// <summary>
+    /// 【穿透防护】是否缓存空值（工厂方法返回 null 时写入占位记录）
+    /// </summary>
+    public bool CacheNullValues { get; set; } = true;
+
+    /// <summary>
+    /// 【穿透防护】空值缓存过期时间（分钟），应远小于正常缓存
+    /// </summary>
+    public int NullValueExpirationMinutes { get; set; } = 5;
+
+    /// <summary>
+    /// 【击穿防护】GetOrSet 缓存未命中时是否启用分布式锁（防止并发穿透到数据库）
+    /// </summary>
+    public bool EnableBreakdownLock { get; set; } = true;
+
+    /// <summary>
+    /// 【击穿防护】等待锁的超时（毫秒）
+    /// </summary>
+    public int BreakdownLockTimeoutMs { get; set; } = 3000;
+
     /// <summary>构建连接字符串</summary>
     public string BuildConnectionString()
     {
