@@ -1,10 +1,12 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Serialization;
 using ZWQ.TestCases.RabbitMQ;
 using ZWQ.TestCases.RabbitMQ.Consuming;
 using ZWQ.TestCases.RabbitMQ.Sample.Consumers;
 using ZWQ.TestCases.RabbitMQ.Sample.Data;
 using ZWQ.TestCases.RabbitMQ.Sample.Services;
 using ZWQ.TestCases.Redis;
+using ZWQ.TestCases.DesignPatterns;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,23 +20,31 @@ builder.Services.Configure<ZWQ.TestCases.Redis.Options.RedisOptions>(
     builder.Configuration.GetSection("Redis"));
 builder.Services.AddZwqRedis();
 
-// ====== 3. 消费者 ======
+// ====== 3. 设计模式（策略模式 + 工厂模式） ======
+builder.Services.AddZwqDesignPatterns();
+
+// ====== 4. 消费者 ======
 builder.Services.AddHostedService<OrderConsumerService>();
 builder.Services.AddHostedService<PaymentConsumerService>();
 builder.Services.AddHostedService<NotificationConsumerService>();
 builder.Services.AddHostedService<DeadLetterConsumerService>();
 
-// ====== 4. DbContext ======
+// ====== 5. DbContext ======
 builder.Services.AddDbContext<SampleDbContext>(opt =>
     opt.UseSqlite("Data Source=sample.db"));
 
-// ====== 5. 业务 Service ======
+// ====== 6. 业务 Service ======
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 
-// ====== 6. Controller + Swagger ======
-builder.Services.AddControllers();
+// ====== 7. Controller + Swagger ======
+builder.Services.AddControllers()
+    .AddJsonOptions(opt =>
+    {
+        // 枚举序列化为字符串，方便前端使用 "Alipay" 而非数字 0
+        opt.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -42,7 +52,7 @@ builder.Services.AddSwaggerGen(c =>
     {
         Title = "ZWQ.TestCases API",
         Version = "v1",
-        Description = "ZWQ 测试用例集合 — RabbitMQ 消息队列 / Redis 缓存 / 分布式锁测试接口"
+        Description = "ZWQ 测试用例集合 — RabbitMQ 消息队列 / Redis 缓存 / 设计模式（策略+工厂）测试接口"
     });
 
     // 加载 XML 注释文件

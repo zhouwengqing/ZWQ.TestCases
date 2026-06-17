@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZWQ.TestCases.RabbitMQ\ZWQ.TestCases.RabbitMQ.csproj" />
     <ProjectReference Include="..\..\src\ZWQ.TestCases.Redis\ZWQ.TestCases.Redis.csproj" />
+    <ProjectReference Include="..\..\src\ZWQ.TestCases.DesignPatterns\ZWQ.TestCases.DesignPatterns.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="7.3.1" />
   </ItemGroup>

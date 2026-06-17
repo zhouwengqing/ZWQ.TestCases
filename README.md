@@ -1,6 +1,6 @@
 # ZWQ.TestCases
 
-.NET 10 中间件测试用例集合，涵盖 RabbitMQ 消息队列、Redis 分布式缓存/锁等场景，每个模块均为生产级实现。
+.NET 10 中间件 & 设计模式测试用例集合，涵盖 RabbitMQ 消息队列、Redis 分布式缓存/锁、策略模式 + 工厂模式等场景，每个模块均为生产级实现。
 
 ## 项目结构
 
@@ -13,13 +13,18 @@ ZWQ.TestCases.sln
 │   │   ├── Publishing/                   # 消息发布者
 │   │   ├── Idempotency/                  # 先占位后处理幂等（EF Core）
 │   │   └── Options/                      # 配置 POCO
-│   └── ZWQ.TestCases.Redis/              # Redis 扩展库
-│       ├── Connection/                   # 连接管理器（单例 + 自动重连）
-│       ├── Caching/                      # 分布式缓存服务（含穿透/击穿/雪崩防护）
-│       ├── BloomFilter/                  # 布隆过滤器（穿透防护第一线）
-│       ├── Locking/                      # 分布式锁
-│       ├── Monitoring/                   # 心跳监控（BackgroundService）
-│       └── Options/                      # 配置 POCO
+│   ├── ZWQ.TestCases.Redis/              # Redis 扩展库
+│   │   ├── Connection/                   # 连接管理器（单例 + 自动重连）
+│   │   ├── Caching/                      # 分布式缓存服务（含穿透/击穿/雪崩防护）
+│   │   ├── BloomFilter/                  # 布隆过滤器（穿透防护第一线）
+│   │   ├── Locking/                      # 分布式锁
+│   │   ├── Monitoring/                   # 心跳监控（BackgroundService）
+│   │   └── Options/                      # 配置 POCO
+│   └── ZWQ.TestCases.DesignPatterns/     # 设计模式实战库
+│       ├── Models/                       # 支付模型（PaymentMethod/Request/Result）
+│       ├── Strategy/                     # 策略模式 — 支付策略接口 + 4 种实现
+│       ├── Factory/                      # 工厂模式 — DI 驱动的策略工厂
+│       └── ServiceCollectionExtensions   # 一行注册
 └── samples/
     └── ZWQ.TestCases.RabbitMQ.Sample/    # 可运行测试项目（Swagger UI）
 ```
@@ -45,6 +50,15 @@ ZWQ.TestCases.sln
 - **布隆过滤器** — `IBloomFilter` 基于 Redis BitArray + 双重哈希，O(K) 判断元素是否存在，作为穿透防护的第一道防线
 - **心跳监控** — `RedisHealthMonitor` 定时 PING 检测，记录延迟/成功率/连续失败，状态变化自动告警
 - **一行注册** — `services.AddZwqRedis()`
+
+### 设计模式模块（策略模式 + 工厂模式）
+
+以**多支付渠道**（支付宝 / 微信支付 / PayPal / 银行卡）为场景，演示策略模式和工厂模式在 .NET DI 容器中的最佳实践。
+
+- **策略模式** — `IPaymentStrategy` 接口 + 4 种独立实现（`AlipayStrategy`、`WeChatPayStrategy`、`PayPalStrategy`、`CreditCardStrategy`），每种策略封装各自的参数校验和支付逻辑
+- **工厂模式** — `PaymentStrategyFactory` 基于 DI 容器自动收集所有 `IPaymentStrategy` 实现，按 `PaymentMethod` 枚举建立字典索引，新增支付方式无需修改工厂代码（开闭原则）
+- **DI 驱动** — 工厂通过 `IEnumerable<IPaymentStrategy>` 构造函数注入，自动发现所有已注册策略
+- **一行注册** — `services.AddZwqDesignPatterns()`
 
 ## 快速开始
 
@@ -116,6 +130,10 @@ dotnet run
 | Monitor | `GET /api/redis-monitor/status` | 健康状态总览 |
 | Monitor | `GET /api/redis-monitor/history` | 最近心跳记录 |
 | Monitor | `GET /api/redis-monitor/health` | 简易健康探针 |
+| 支付策略 | `POST /api/paymentstrategy/pay` | 发起支付（工厂自动选择策略） |
+| 支付策略 | `POST /api/paymentstrategy/refund` | 发起退款 |
+| 支付策略 | `GET /api/paymentstrategy/methods` | 查询已注册支付方式 |
+| 支付策略 | `POST /api/paymentstrategy/batch` | 批量支付（所有渠道） |
 
 ## Redis 缓存三重防护
 
@@ -197,6 +215,50 @@ if (!await bloomFilter.ContainsAsync("user_ids", requestedId))
 - 连续失败时降低日志频率（每 10 次打一次），避免日志轰炸
 - 通过 `/api/redis-monitor/status` 查看完整健康报告
 - 通过 `/api/redis-monitor/health` 作为负载均衡健康探针
+
+## 设计模式：策略模式 + 工厂模式
+
+### 架构
+
+```
+客户端请求 { PaymentMethod = "Alipay" }
+        │
+        ▼
+  PaymentStrategyFactory.GetStrategy(PaymentMethod.Alipay)
+        │
+        ├─ AlipayStrategy    → 调用支付宝 SDK
+        ├─ WeChatPayStrategy → 调用微信支付 V3 API
+        ├─ PayPalStrategy    → 调用 PayPal Checkout SDK
+        └─ CreditCardStrategy→ 调用银联/Stripe 网关
+```
+
+### 如何新增支付方式
+
+只需两步，无需修改任何已有代码（开闭原则）：
+
+```csharp
+// 1. 创建策略实现
+public class ApplePayStrategy : IPaymentStrategy
+{
+    public PaymentMethod Method => PaymentMethod.ApplePay;
+    public async Task<PaymentResult> PayAsync(PaymentRequest request) { ... }
+    public async Task<bool> RefundAsync(string transactionId, decimal amount) { ... }
+}
+
+// 2. 在 ServiceCollectionExtensions 中注册
+services.AddSingleton<IPaymentStrategy, ApplePayStrategy>();
+```
+
+工厂会自动通过 DI 发现新策略并注册到字典中。
+
+### 各策略的差异化校验
+
+| 策略 | 特有校验 | 说明 |
+|------|----------|------|
+| AlipayStrategy | 无特殊校验 | 通用支付 |
+| WeChatPayStrategy | 必须有 UserId（openId） | 微信支付 JSAPI 需要用户标识 |
+| PayPalStrategy | 仅支持 USD/EUR/GBP 等外币 | PayPal 不支持人民币 |
+| CreditCardStrategy | 单笔限额 50,000 元 | 银行卡风控限制 |
 
 ## 环境要求
 
