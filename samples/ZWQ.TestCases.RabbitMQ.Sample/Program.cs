@@ -7,6 +7,7 @@ using ZWQ.TestCases.RabbitMQ.Sample.Data;
 using ZWQ.TestCases.RabbitMQ.Sample.Services;
 using ZWQ.TestCases.Redis;
 using ZWQ.TestCases.DesignPatterns;
+using ZWQ.TestCases.VectorSearch;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -23,22 +24,25 @@ builder.Services.AddZwqRedis();
 // ====== 3. 设计模式（策略模式 + 工厂模式） ======
 builder.Services.AddZwqDesignPatterns();
 
-// ====== 4. 消费者 ======
+// ====== 4. 向量搜索（Qdrant + CLIP ONNX） ======
+builder.Services.AddZwqVectorSearch(builder.Configuration);
+
+// ====== 5. 消费者 ======
 builder.Services.AddHostedService<OrderConsumerService>();
 builder.Services.AddHostedService<PaymentConsumerService>();
 builder.Services.AddHostedService<NotificationConsumerService>();
 builder.Services.AddHostedService<DeadLetterConsumerService>();
 
-// ====== 5. DbContext ======
+// ====== 6. DbContext ======
 builder.Services.AddDbContext<SampleDbContext>(opt =>
     opt.UseSqlite("Data Source=sample.db"));
 
-// ====== 6. 业务 Service ======
+// ====== 7. 业务 Service ======
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IPaymentService, PaymentService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 
-// ====== 7. Controller + Swagger ======
+// ====== 8. Controller + Swagger ======
 builder.Services.AddControllers()
     .AddJsonOptions(opt =>
     {
@@ -52,7 +56,7 @@ builder.Services.AddSwaggerGen(c =>
     {
         Title = "ZWQ.TestCases API",
         Version = "v1",
-        Description = "ZWQ 测试用例集合 — RabbitMQ 消息队列 / Redis 缓存 / 设计模式（策略+工厂）测试接口"
+        Description = "ZWQ 测试用例集合 — RabbitMQ 消息队列 / Redis 缓存 / 设计模式（策略+工厂） / 向量搜索（Qdrant+CLIP）测试接口"
     });
 
     // 加载 XML 注释文件

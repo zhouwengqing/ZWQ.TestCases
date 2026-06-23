@@ -1,6 +1,6 @@
 # ZWQ.TestCases
 
-.NET 10 中间件 & 设计模式测试用例集合，涵盖 RabbitMQ 消息队列、Redis 分布式缓存/锁、策略模式 + 工厂模式等场景，每个模块均为生产级实现。
+.NET 10 中间件 & 设计模式测试用例集合，涵盖 RabbitMQ 消息队列、Redis 分布式缓存/锁、策略模式 + 工厂模式、向量搜索（Qdrant + CLIP ONNX）等场景，每个模块均为生产级实现。
 
 ## 项目结构
 
@@ -20,10 +20,18 @@ ZWQ.TestCases.sln
 │   │   ├── Locking/                      # 分布式锁
 │   │   ├── Monitoring/                   # 心跳监控（BackgroundService）
 │   │   └── Options/                      # 配置 POCO
-│   └── ZWQ.TestCases.DesignPatterns/     # 设计模式实战库
-│       ├── Models/                       # 支付模型（PaymentMethod/Request/Result）
-│       ├── Strategy/                     # 策略模式 — 支付策略接口 + 4 种实现
-│       ├── Factory/                      # 工厂模式 — DI 驱动的策略工厂
+│   ├── ZWQ.TestCases.DesignPatterns/     # 设计模式实战库
+│   │   ├── Models/                       # 支付模型（PaymentMethod/Request/Result）
+│   │   ├── Strategy/                     # 策略模式 — 支付策略接口 + 4 种实现
+│   │   ├── Factory/                      # 工厂模式 — DI 驱动的策略工厂
+│   │   └── ServiceCollectionExtensions   # 一行注册
+│   └── ZWQ.TestCases.VectorSearch/       # 向量搜索库（Qdrant + CLIP ONNX）
+│       ├── Options/                      # Qdrant/CLIP/全局配置 POCO
+│       ├── Models/                       # ImageDocument/SearchResult/IndexingRequest
+│       ├── Embeddings/                   # CLIP ONNX 推理（BPE 分词 + 图像预处理 + 向量生成）
+│       ├── Qdrant/                       # Qdrant 集合管理（创建/Upsert/搜索）
+│       ├── Indexing/                     # 索引服务 + BackgroundService 批量索引
+│       ├── Search/                       # 文字搜图 + 以图搜图
 │       └── ServiceCollectionExtensions   # 一行注册
 └── samples/
     └── ZWQ.TestCases.RabbitMQ.Sample/    # 可运行测试项目（Swagger UI）
@@ -60,6 +68,18 @@ ZWQ.TestCases.sln
 - **DI 驱动** — 工厂通过 `IEnumerable<IPaymentStrategy>` 构造函数注入，自动发现所有已注册策略
 - **一行注册** — `services.AddZwqDesignPatterns()`
 
+### 向量搜索模块（Qdrant + CLIP ONNX）
+
+基于 Qdrant 向量数据库和 CLIP ViT-B/32 ONNX 模型，实现多模态搜索：**文字搜图**和**以图搜图**。
+
+- **CLIP ONNX 推理** — `ClipEmbeddingService` 加载视觉/文本编码器 ONNX 模型，生成 512 维 L2 归一化 Embedding 向量
+- **BPE 分词器** — `BpeTokenizer` 纯 C# 实现 CLIP BPE 算法（49408 词表 + 48894 合并规则），文本 → 77 Token ID
+- **图像预处理** — `ImagePreprocessor` 基于 ImageSharp，Resize → CenterCrop 224×224 → CHW 归一化张量
+- **Qdrant 集合管理** — `QdrantCollectionManager` 自动创建集合（512 维 Cosine + HNSW），SHA256 路径幂等 Point ID
+- **批量索引** — `VectorIndexService` 支持单张/批量/目录扫描索引，`BackgroundService` 启动时自动全量索引
+- **多模态搜索** — `VectorSearchService` 支持文字搜图（Text-to-Image）和以图搜图（Image-to-Image）
+- **一行注册** — `services.AddZwqVectorSearch(configuration)`
+
 ## 快速开始
 
 ### 1. 安装 Redis
@@ -76,7 +96,20 @@ docker run -d --name redis -p 6379:6379 redis:5
 docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
 ```
 
-### 3. 运行示例项目
+### 3. 安装 Qdrant（向量数据库）
+
+```bash
+docker run -d --name qdrant -p 6333:6333 -p 6334:6334 -v qdrant_data:/qdrant/storage qdrant/qdrant:latest
+```
+
+### 4. 导出 CLIP ONNX 模型
+
+```bash
+pip install torch transformers optimum onnx onnxscript
+python export_clip.py  # 导出 model_vision.onnx + model_text.onnx + vocab.json + merges.txt
+```
+
+### 5. 运行示例项目
 
 ```bash
 cd samples/ZWQ.TestCases.RabbitMQ.Sample
@@ -104,6 +137,19 @@ dotnet run
     "CacheNullValues": true,
     "NullValueExpirationMinutes": 5,
     "EnableBreakdownLock": true
+  },
+  "VectorSearch": {
+    "ImageDirectory": "D:\\Images",
+    "BatchSize": 16
+  },
+  "Qdrant": {
+    "Host": "localhost",
+    "GrpcPort": 6334,
+    "CollectionName": "images"
+  },
+  "ClipModel": {
+    "ModelDirectory": "D:\\SW\\Tools\\clip-onnx",
+    "EmbeddingDimension": 512
   }
 }
 ```
@@ -134,6 +180,12 @@ dotnet run
 | 支付策略 | `POST /api/paymentstrategy/refund` | 发起退款 |
 | 支付策略 | `GET /api/paymentstrategy/methods` | 查询已注册支付方式 |
 | 支付策略 | `POST /api/paymentstrategy/batch` | 批量支付（所有渠道） |
+| 向量搜索 | `GET /api/search/text?query=` | 文字搜图（自然语言搜索相似图片） |
+| 向量搜索 | `POST /api/search/image` | 以图搜图（上传图片搜索） |
+| 向量搜索 | `GET /api/search/image?imagePath=` | 以图搜图（已索引图片路径） |
+| 向量索引 | `POST /api/indexing/index` | 批量索引指定路径的图片 |
+| 向量索引 | `POST /api/indexing/index/single` | 索引单张图片 |
+| 向量索引 | `POST /api/indexing/index/directory` | 扫描目录全量索引 |
 
 ## Redis 缓存三重防护
 
@@ -260,11 +312,50 @@ services.AddSingleton<IPaymentStrategy, ApplePayStrategy>();
 | PayPalStrategy | 仅支持 USD/EUR/GBP 等外币 | PayPal 不支持人民币 |
 | CreditCardStrategy | 单笔限额 50,000 元 | 银行卡风控限制 |
 
+## 向量搜索架构
+
+### 数据流
+
+```
+文字搜图:
+  Query → BpeTokenizer.Encode() → int[77]
+    → model_text.onnx → text_embeds float[512]
+    → L2Normalize → Qdrant Search → Results
+
+以图搜图:
+  ImageFile → ImagePreprocessor → float[150528] (1×3×224×224)
+    → model_vision.onnx → image_embeds float[512]
+    → L2Normalize → Qdrant Search → Results
+```
+
+### 核心技术点
+
+| 组件 | 技术 | 说明 |
+|------|------|------|
+| 向量数据库 | Qdrant（Rust 实现） | 512 维 Cosine 距离 + HNSW 索引 |
+| Embedding 模型 | CLIP ViT-B/32（ONNX） | 视觉+文本双编码器，共享 512 维向量空间 |
+| 图像预处理 | ImageSharp | Resize 224 + CenterCrop + CHW 归一化 |
+| 文本分词 | BPE（纯 C#） | 49408 词表，77 Token 序列 |
+| Point ID | SHA256(路径) → Guid | 幂等 Upsert，重复索引自动覆盖 |
+| 批量索引 | BackgroundService | 启动时扫描目录批量处理，之后 API 增量索引 |
+
+### 如何新增搜索模态
+
+CLIP 的文本和图片 Embedding 共享同一向量空间，因此新增搜索模态只需：
+
+```csharp
+// 例：视频封面搜索 — 提取关键帧后复用 ImageEmbedding
+float[] embedding = await embeddingService.GetImageEmbeddingAsync(coverFramePath);
+var results = await qdrant.SearchAsync(embedding, topK: 10);
+```
+
 ## 环境要求
 
 - .NET 10
 - RabbitMQ 3.x（建议开启 management 插件）
 - Redis 5.x+
+- Qdrant 1.18+（Docker 或 Windows 可执行文件）
+- CLIP ViT-B/32 ONNX 模型（需 Python 导出一次）
 
 ## 许可证
 
