@@ -254,7 +254,8 @@ public sealed class TextSearchService : ITextSearchService, IDisposable
     }
 
     /// <summary>
-    /// 全文逐行扫描：用 IndexOf 在每一行中查找关键词的所有出现位置
+    /// 全文逐行扫描：用 IndexOf 在每一行中查找关键词的所有出现位置。
+    /// 同时处理跨行匹配（关键词横跨两行边界的情况）。
     /// </summary>
     private async Task<List<Position>> FullTextScanAsync(
         string keyword, bool caseSensitive, CancellationToken ct)
@@ -267,12 +268,15 @@ public sealed class TextSearchService : ITextSearchService, IDisposable
         using var reader = new StreamReader(_filePath!);
         string? line;
         int lineNumber = 0;
+        string? prevLine = null;
+        int prevLineNumber = 0;
 
         while ((line = await reader.ReadLineAsync(ct)) != null)
         {
             lineNumber++;
             ct.ThrowIfCancellationRequested();
 
+            // ── 行内搜索 ──
             int idx = 0;
             while ((idx = line.IndexOf(keyword, idx, comparison)) >= 0)
             {
@@ -284,6 +288,60 @@ public sealed class TextSearchService : ITextSearchService, IDisposable
                 });
                 idx += keyword.Length;
             }
+
+            // ── 跨行搜索：上一行尾部 + 当前行头部 ──
+            if (prevLine != null && keyword.Length >= 2)
+            {
+                // 取上一行末尾的 keyword.Length-1 个字符（不够则取全部）
+                int tailLen = Math.Min(keyword.Length - 1, prevLine.Length);
+                // 取当前行开头的 keyword.Length-1 个字符（不够则取全部）
+                int headLen = Math.Min(keyword.Length - 1, line.Length);
+
+                if (tailLen > 0 && headLen > 0)
+                {
+                    // 拼接跨区域文本并搜索
+                    var combined = string.Concat(
+                        prevLine.AsSpan(prevLine.Length - tailLen),
+                        line.AsSpan(0, headLen));
+
+                    int searchStart = 0;
+                    // 排除完全落在上一行内部的匹配（已在上一轮行内搜索中找到）
+                    int skipUntil = Math.Max(0, tailLen - (keyword.Length - 1));
+
+                    int ci = skipUntil;
+                    while ((ci = combined.IndexOf(keyword, ci, comparison)) >= 0
+                           && ci + keyword.Length <= combined.Length)
+                    {
+                        if (ci >= searchStart)
+                        {
+                            if (ci < tailLen)
+                            {
+                                // 匹配起始于上一行 → 报告到上一行
+                                positions.Add(new Position
+                                {
+                                    LineNumber = prevLineNumber,
+                                    ColumnIndex = prevLine.Length - tailLen + ci,
+                                    WordLength = keyword.Length
+                                });
+                            }
+                            else
+                            {
+                                // 匹配起始于当前行 → 报告到当前行
+                                positions.Add(new Position
+                                {
+                                    LineNumber = lineNumber,
+                                    ColumnIndex = ci - tailLen,
+                                    WordLength = keyword.Length
+                                });
+                            }
+                        }
+                        ci++;
+                    }
+                }
+            }
+
+            prevLine = line;
+            prevLineNumber = lineNumber;
         }
 
         return positions;
