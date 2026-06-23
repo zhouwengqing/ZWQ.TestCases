@@ -93,8 +93,12 @@ public sealed class ClipEmbeddingService : IClipEmbeddingService
         int[] inputIds = _tokenizer.Encode(text);
         int[] attentionMask = _tokenizer.GetAttentionMask(text);
 
-        var inputIdsTensor = new DenseTensor<int>(inputIds, [1, _options.MaxTokenLength]);
-        var attentionMaskTensor = new DenseTensor<int>(attentionMask, [1, _options.MaxTokenLength]);
+        // ONNX text model expects Int64 tensors
+        var inputIdsLong = inputIds.Select(i => (long)i).ToArray();
+        var attentionMaskLong = attentionMask.Select(i => (long)i).ToArray();
+
+        var inputIdsTensor = new DenseTensor<long>(inputIdsLong, [1, _options.MaxTokenLength]);
+        var attentionMaskTensor = new DenseTensor<long>(attentionMaskLong, [1, _options.MaxTokenLength]);
         var inputs = new List<NamedOnnxValue>
         {
             NamedOnnxValue.CreateFromTensor("input_ids", inputIdsTensor),
