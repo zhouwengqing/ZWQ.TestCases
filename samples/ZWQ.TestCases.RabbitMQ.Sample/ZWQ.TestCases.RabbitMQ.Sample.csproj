@@ -14,8 +14,13 @@
     <ProjectReference Include="..\..\src\ZWQ.TestCases.Redis\ZWQ.TestCases.Redis.csproj" />
     <ProjectReference Include="..\..\src\ZWQ.TestCases.DesignPatterns\ZWQ.TestCases.DesignPatterns.csproj" />
     <ProjectReference Include="..\..\src\ZWQ.TestCases.VectorSearch\ZWQ.TestCases.VectorSearch.csproj" />
+    <ProjectReference Include="..\..\src\ZWQ.TestCases.TextSearch\ZWQ.TestCases.TextSearch.csproj" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="7.3.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\src\ZWQ.TestCases.TextSearch\Resources\**" LinkBase="Resources" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
