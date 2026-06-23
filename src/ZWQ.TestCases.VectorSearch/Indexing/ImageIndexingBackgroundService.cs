@@ -26,28 +26,28 @@ public sealed class ImageIndexingBackgroundService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("[Indexer] Background service starting for {Dir}", _options.ImageDirectory);
+        _logger.LogInformation("[索引] 后台索引服务启动, 目标目录: {Dir}", _options.ImageDirectory);
 
         if (!Directory.Exists(_options.ImageDirectory))
         {
-            _logger.LogWarning("[Indexer] Image directory does not exist: {Dir}. Skipping initial indexing.", _options.ImageDirectory);
+            _logger.LogWarning("[索引] 图片目录不存在: {Dir}, 跳过初始索引", _options.ImageDirectory);
             return;
         }
 
         try
         {
             int count = await _indexService.IndexDirectoryAsync(_options.ImageDirectory, stoppingToken);
-            _logger.LogInformation("[Indexer] Initial indexing complete. {Count} images indexed.", count);
+            _logger.LogInformation("[索引] 初始索引完成, 共索引 {Count} 张图片", count);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
-            _logger.LogInformation("[Indexer] Indexing cancelled due to application shutdown.");
+            _logger.LogInformation("[索引] 应用关闭, 索引任务已取消");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[Indexer] Unhandled error during initial image indexing.");
+            _logger.LogError(ex, "[索引] 初始索引过程中发生未处理异常");
         }
 
-        _logger.LogInformation("[Indexer] Background service idle. Use API for incremental indexing.");
+        _logger.LogInformation("[索引] 后台服务进入空闲状态, 可通过 API 增量索引");
     }
 }

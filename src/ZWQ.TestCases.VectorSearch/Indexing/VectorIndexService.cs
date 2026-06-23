@@ -35,7 +35,7 @@ public sealed class VectorIndexService : IVectorIndexService
         var fullPath = Path.GetFullPath(imagePath);
         var pointId = _qdrant.ComputePointId(fullPath);
 
-        _logger.LogInformation("[Indexer] Indexing image {Path} -> {PointId}", fullPath, pointId);
+        _logger.LogInformation("[索引] 正在索引图片 {Path} -> {PointId}", fullPath, pointId);
 
         float[] embedding = await _embeddingService.GetImageEmbeddingAsync(fullPath, ct);
         var fileInfo = new FileInfo(fullPath);
@@ -61,12 +61,12 @@ public sealed class VectorIndexService : IVectorIndexService
             if (File.Exists(full))
                 validPaths.Add(full);
             else
-                _logger.LogWarning("[Indexer] Image not found, skipping: {Path}", full);
+                _logger.LogWarning("[索引] 图片不存在, 已跳过: {Path}", full);
         }
 
         if (validPaths.Count == 0) return;
 
-        _logger.LogInformation("[Indexer] Batch indexing {Count} images", validPaths.Count);
+        _logger.LogInformation("[索引] 批量索引 {Count} 张图片", validPaths.Count);
 
         float[][] embeddings = await _embeddingService.GetImageEmbeddingsBatchAsync(validPaths, ct);
 
@@ -86,14 +86,14 @@ public sealed class VectorIndexService : IVectorIndexService
         }
 
         await _qdrant.UpsertBatchAsync(points, ct);
-        _logger.LogInformation("[Indexer] Batch complete: {Count} images indexed", validPaths.Count);
+        _logger.LogInformation("[索引] 批量完成: {Count} 张图片已索引", validPaths.Count);
     }
 
     public async Task<int> IndexDirectoryAsync(string directory, CancellationToken ct = default)
     {
         if (!Directory.Exists(directory))
         {
-            _logger.LogWarning("[Indexer] Directory not found: {Dir}", directory);
+            _logger.LogWarning("[索引] 目录不存在: {Dir}", directory);
             return 0;
         }
 
@@ -101,7 +101,7 @@ public sealed class VectorIndexService : IVectorIndexService
             .Where(f => _options.SupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
             .ToList();
 
-        _logger.LogInformation("[Indexer] Found {Count} images in {Dir}", files.Count, directory);
+        _logger.LogInformation("[索引] 在 {Dir} 中发现 {Count} 张图片", directory, files.Count);
 
         // 查询已索引路径，跳过重复
         var existingPaths = await _qdrant.GetExistingFilePathsAsync(ct);
@@ -111,11 +111,11 @@ public sealed class VectorIndexService : IVectorIndexService
 
         int skipped = files.Count - newFiles.Count;
         if (skipped > 0)
-            _logger.LogInformation("[Indexer] Skipping {Skipped} already-indexed images, {Remaining} new to index", skipped, newFiles.Count);
+            _logger.LogInformation("[索引] 跳过 {Skipped} 张已索引图片, 剩余 {Remaining} 张待索引", skipped, newFiles.Count);
 
         if (newFiles.Count == 0)
         {
-            _logger.LogInformation("[Indexer] All images already indexed, nothing to do.");
+            _logger.LogInformation("[索引] 所有图片已索引, 无需处理");
             return 0;
         }
 
@@ -127,15 +127,15 @@ public sealed class VectorIndexService : IVectorIndexService
             {
                 await IndexBatchAsync(batch, ct);
                 totalIndexed += batch.Length;
-                _logger.LogInformation("[Indexer] Progress: {Done}/{Total}", totalIndexed, newFiles.Count);
+                _logger.LogInformation("[索引] 进度: {Done}/{Total}", totalIndexed, newFiles.Count);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[Indexer] Batch failed, skipping {Count} images", batch.Length);
+                _logger.LogError(ex, "[索引] 批次失败, 跳过 {Count} 张图片", batch.Length);
             }
         }
 
-        _logger.LogInformation("[Indexer] Directory indexing complete. Total: {Count}", totalIndexed);
+        _logger.LogInformation("[索引] 目录索引完成, 共计 {Count} 张", totalIndexed);
         return totalIndexed;
     }
 

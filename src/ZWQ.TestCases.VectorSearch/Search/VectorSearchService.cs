@@ -29,11 +29,11 @@ public sealed class VectorSearchService : IVectorSearchService
     {
         if (string.IsNullOrWhiteSpace(query))
         {
-            _logger.LogWarning("[Search] Empty text query received");
+            _logger.LogWarning("[搜索] 收到空的文本查询");
             return Array.Empty<SearchResult>();
         }
 
-        _logger.LogInformation("[Search] Text-to-image: '{Query}', topK={TopK}", query, topK);
+        _logger.LogInformation("[搜索] 以文搜图: '{Query}', topK={TopK}", query, topK);
         float[] embedding = await _embeddingService.GetTextEmbeddingAsync(query, ct);
         return await _qdrant.SearchAsync(embedding, topK, scoreThreshold, ct);
     }
@@ -45,7 +45,7 @@ public sealed class VectorSearchService : IVectorSearchService
         if (!File.Exists(fullPath))
             throw new FileNotFoundException($"Image not found for similarity search: {fullPath}");
 
-        _logger.LogInformation("[Search] Image-to-image: '{Path}', topK={TopK}", fullPath, topK);
+        _logger.LogInformation("[搜索] 以图搜图: '{Path}', topK={TopK}", fullPath, topK);
         float[] embedding = await _embeddingService.GetImageEmbeddingAsync(fullPath, ct);
         return await _qdrant.SearchAsync(embedding, topK, scoreThreshold, ct);
     }

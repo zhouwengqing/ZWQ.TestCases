@@ -39,7 +39,7 @@ public sealed class QdrantCollectionManager : IQdrantCollectionManager
         var exists = await _client.CollectionExistsAsync(_options.CollectionName, ct);
         if (!exists)
         {
-            _logger.LogInformation("[Qdrant] Creating collection '{Name}' (dim={Dim}, Cosine)",
+            _logger.LogInformation("[Qdrant] 正在创建集合 '{Name}' (维度={Dim}, 余弦距离)",
                 _options.CollectionName, _clipOptions.EmbeddingDimension);
 
             await _client.CreateCollectionAsync(
@@ -50,11 +50,11 @@ public sealed class QdrantCollectionManager : IQdrantCollectionManager
             await _client.CreatePayloadIndexAsync(_options.CollectionName, "file_path", PayloadSchemaType.Keyword, cancellationToken: ct);
             await _client.CreatePayloadIndexAsync(_options.CollectionName, "sha256_hash", PayloadSchemaType.Keyword, cancellationToken: ct);
 
-            _logger.LogInformation("[Qdrant] Collection '{Name}' created with payload indices", _options.CollectionName);
+            _logger.LogInformation("[Qdrant] 集合 '{Name}' 创建完成, 已建立载荷索引", _options.CollectionName);
         }
         else
         {
-            _logger.LogInformation("[Qdrant] Collection '{Name}' already exists", _options.CollectionName);
+            _logger.LogInformation("[Qdrant] 集合 '{Name}' 已存在", _options.CollectionName);
         }
 
         _collectionEnsured = true;
@@ -85,7 +85,7 @@ public sealed class QdrantCollectionManager : IQdrantCollectionManager
         }
 
         await _client.UpsertAsync(_options.CollectionName, pointStructs, cancellationToken: ct);
-        _logger.LogInformation("[Qdrant] Upserted {Count} points into '{Name}'", pointStructs.Count, _options.CollectionName);
+        _logger.LogInformation("[Qdrant] 已写入 {Count} 个向量点到 '{Name}'", pointStructs.Count, _options.CollectionName);
     }
 
     public async Task<IReadOnlyList<SearchResult>> SearchAsync(
@@ -180,7 +180,7 @@ public sealed class QdrantCollectionManager : IQdrantCollectionManager
 
         } while (offset is not null);
 
-        _logger.LogInformation("[Qdrant] Found {Count} existing indexed paths in '{Name}'", paths.Count, _options.CollectionName);
+        _logger.LogInformation("[Qdrant] 在 '{Name}' 中发现 {Count} 个已索引路径", _options.CollectionName, paths.Count);
         return paths;
     }
 }

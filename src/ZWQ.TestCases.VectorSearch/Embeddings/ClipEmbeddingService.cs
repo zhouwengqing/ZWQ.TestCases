@@ -37,13 +37,13 @@ public sealed class ClipEmbeddingService : IClipEmbeddingService
         var sessionOptions = new SessionOptions();
         sessionOptions.GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL;
 
-        _logger.LogInformation("[CLIP] Loading vision model: {Path}", _options.VisionModelPath);
+        _logger.LogInformation("[CLIP] 正在加载视觉模型: {Path}", _options.VisionModelPath);
         _visionSession = new InferenceSession(_options.VisionModelPath, sessionOptions);
 
-        _logger.LogInformation("[CLIP] Loading text model: {Path}", _options.TextModelPath);
+        _logger.LogInformation("[CLIP] 正在加载文本模型: {Path}", _options.TextModelPath);
         _textSession = new InferenceSession(_options.TextModelPath, sessionOptions);
 
-        _logger.LogInformation("[CLIP] Embedding service initialized (dim={Dim})", _options.EmbeddingDimension);
+        _logger.LogInformation("[CLIP] 向量服务初始化完成 (维度={Dim})", _options.EmbeddingDimension);
     }
 
     public Task<float[]> GetImageEmbeddingAsync(string imagePath, CancellationToken ct = default)

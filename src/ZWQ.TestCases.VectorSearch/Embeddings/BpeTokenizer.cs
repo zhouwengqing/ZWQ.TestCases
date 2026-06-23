@@ -46,7 +46,7 @@ public sealed partial class BpeTokenizer
                 _bpeRanks[(parts[0], parts[1])] = rank++;
         }
 
-        _logger.LogInformation("[CLIP] BPE tokenizer loaded: {VocabSize} tokens, {MergeRules} merge rules",
+        _logger.LogInformation("[CLIP] BPE 分词器已加载: {VocabSize} 个词元, {MergeRules} 条合并规则",
             _vocab.Count, _bpeRanks.Count);
     }
 
