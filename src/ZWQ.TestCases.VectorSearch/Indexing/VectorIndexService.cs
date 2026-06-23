@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SixLabors.ImageSharp;
 using ZWQ.TestCases.VectorSearch.Embeddings;
 using ZWQ.TestCases.VectorSearch.Models;
 using ZWQ.TestCases.VectorSearch.Options;
@@ -58,10 +59,29 @@ public sealed class VectorIndexService : IVectorIndexService
         foreach (var p in imagePaths)
         {
             var full = Path.GetFullPath(p);
-            if (File.Exists(full))
-                validPaths.Add(full);
-            else
+            if (!File.Exists(full))
+            {
                 _logger.LogWarning("[索引] 图片不存在, 已跳过: {Path}", full);
+                continue;
+            }
+
+            // 校验文件是否为合法图片格式（只读文件头，不完全加载）
+            try
+            {
+                var info = Image.Identify(full);
+                if (info == null)
+                {
+                    _logger.LogWarning("[索引] 无法识别图片格式, 已跳过: {Path}", full);
+                    continue;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("[索引] 图片校验失败（可能损坏或非图片文件）, 已跳过: {Path} — {Reason}", full, ex.Message);
+                continue;
+            }
+
+            validPaths.Add(full);
         }
 
         if (validPaths.Count == 0) return;
