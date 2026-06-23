@@ -126,4 +126,61 @@ public sealed class QdrantCollectionManager : IQdrantCollectionManager
         var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(normalized));
         return new Guid(hash.AsSpan(0, 16));
     }
+
+    public async Task<HashSet<string>> GetExistingFilePathsAsync(CancellationToken ct = default)
+    {
+        var exists = await _client.CollectionExistsAsync(_options.CollectionName, ct);
+        if (!exists) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var baseUrl = _options.UseHttps ? "https" : "http";
+        var scrollUrl = $"{baseUrl}://{_options.Host}:{_options.HttpPort}/collections/{_options.CollectionName}/points/scroll";
+
+        using var http = new HttpClient();
+        object? offset = null;
+
+        do
+        {
+            var body = new
+            {
+                limit = 1000,
+                offset,
+                with_payload = new { include = new[] { "file_path" } }
+            };
+
+            var json = System.Text.Json.JsonSerializer.Serialize(body);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await http.PostAsync(scrollUrl, content, ct);
+            response.EnsureSuccessStatusCode();
+
+            var responseJson = await response.Content.ReadAsStringAsync(ct);
+            using var doc = System.Text.Json.JsonDocument.Parse(responseJson);
+            var result = doc.RootElement.GetProperty("result");
+            var points = result.GetProperty("points");
+
+            foreach (var point in points.EnumerateArray())
+            {
+                if (point.TryGetProperty("payload", out var payload) &&
+                    payload.TryGetProperty("file_path", out var fp) &&
+                    fp.GetString() is { } path && !string.IsNullOrEmpty(path))
+                {
+                    paths.Add(path);
+                }
+            }
+
+            // Get next page offset (can be string UUID or number)
+            var nextOffset = result.GetProperty("next_page_offset");
+            offset = nextOffset.ValueKind switch
+            {
+                System.Text.Json.JsonValueKind.Null => null,
+                System.Text.Json.JsonValueKind.Number => (object?)nextOffset.GetUInt64(),
+                System.Text.Json.JsonValueKind.String => (object?)nextOffset.GetString(),
+                _ => null
+            };
+
+        } while (offset is not null);
+
+        _logger.LogInformation("[Qdrant] Found {Count} existing indexed paths in '{Name}'", paths.Count, _options.CollectionName);
+        return paths;
+    }
 }

@@ -103,15 +103,31 @@ public sealed class VectorIndexService : IVectorIndexService
 
         _logger.LogInformation("[Indexer] Found {Count} images in {Dir}", files.Count, directory);
 
+        // 查询已索引路径，跳过重复
+        var existingPaths = await _qdrant.GetExistingFilePathsAsync(ct);
+        var newFiles = files
+            .Where(f => !existingPaths.Contains(Path.GetFullPath(f)))
+            .ToList();
+
+        int skipped = files.Count - newFiles.Count;
+        if (skipped > 0)
+            _logger.LogInformation("[Indexer] Skipping {Skipped} already-indexed images, {Remaining} new to index", skipped, newFiles.Count);
+
+        if (newFiles.Count == 0)
+        {
+            _logger.LogInformation("[Indexer] All images already indexed, nothing to do.");
+            return 0;
+        }
+
         int totalIndexed = 0;
-        foreach (var batch in files.Chunk(_options.BatchSize))
+        foreach (var batch in newFiles.Chunk(_options.BatchSize))
         {
             ct.ThrowIfCancellationRequested();
             try
             {
                 await IndexBatchAsync(batch, ct);
                 totalIndexed += batch.Length;
-                _logger.LogInformation("[Indexer] Progress: {Done}/{Total}", totalIndexed, files.Count);
+                _logger.LogInformation("[Indexer] Progress: {Done}/{Total}", totalIndexed, newFiles.Count);
             }
             catch (Exception ex)
             {

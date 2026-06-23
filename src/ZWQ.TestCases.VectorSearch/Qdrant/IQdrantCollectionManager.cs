@@ -18,4 +18,7 @@ public interface IQdrantCollectionManager
 
     /// <summary>根据图片路径计算确定性的 Point ID（SHA256 → Guid）</summary>
     Guid ComputePointId(string imagePath);
+
+    /// <summary>获取集合中已索引的图片路径集合（用于启动时去重）</summary>
+    Task<HashSet<string>> GetExistingFilePathsAsync(CancellationToken ct = default);
 }
