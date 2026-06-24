@@ -148,11 +148,9 @@ Write-Host ""
 if (-not $NoPush) {
     Write-Host "[3/5] Pushing to Registry ($RegistryUrl)..." -ForegroundColor Cyan
     $pushStart = Get-Date
-    # Tag with latest
     docker tag "${ImageName}:latest" "${RegistryImage}:latest"
     docker push "${RegistryImage}:latest"
     if ($LASTEXITCODE -eq 0) {
-        # Also tag with git commit hash for traceability
         $commitHash = (git rev-parse --short HEAD 2>$null).Trim()
         if ($commitHash) {
             docker tag "${ImageName}:latest" "${RegistryImage}:${commitHash}"
@@ -161,7 +159,7 @@ if (-not $NoPush) {
         $pushSec = [math]::Round(((Get-Date) - $pushStart).TotalSeconds)
         Write-Host "      Pushed in ${pushSec}s" -ForegroundColor DarkGray
     } else {
-        Write-Host "      [WARN] Push failed, skipping (use -NoPush to suppress)" -ForegroundColor Yellow
+        Write-Host "      [WARN] Push failed, local will still run the built image" -ForegroundColor Yellow
     }
     Write-Host ""
 } else {
@@ -169,9 +167,16 @@ if (-not $NoPush) {
     Write-Host ""
 }
 
-# ── Step 4: Quick swap ──
-Write-Host "[4/5] Switching to new version..." -ForegroundColor Cyan
+# ── Step 4: Pull from Registry & swap ──
+Write-Host "[4/5] Pulling from Registry & switching..." -ForegroundColor Cyan
 $swapStart = Get-Date
+
+# Pull the registry image (if push succeeded)
+if (-not $NoPush) {
+    $env:APP_IMAGE = "${RegistryImage}:latest"
+    docker-compose pull app 2>$null | Out-Null
+}
+
 docker-compose up -d --force-recreate --remove-orphans app
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""

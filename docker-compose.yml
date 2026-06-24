@@ -1,6 +1,7 @@
 services:
   # ──────────────── 应用服务 ────────────────
   app:
+    image: ${APP_IMAGE:-47.106.235.211:5000/zwq/mq-app:latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -8,15 +9,14 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - ASPNETCORE_ENVIRONMENT=Docker
+      - ASPNETCORE_ENVIRONMENT=${APP_ENV:-Docker}
     volumes:
       # SQLite 数据库持久化
       - sqlite-data:/data
-      # CLIP ONNX 模型目录 — 把你本机的模型目录映射到这里
-      - D:/SW/Tools/clip-onnx:/models/clip-onnx:ro
-      # 图片目录 — 把你本机的图片目录映射到这里
-      - D:/Images:/data/images:ro
-    depends_on: []
+      # CLIP ONNX 模型目录
+      - ${CLIP_MODEL_DIR:-/opt/models/clip-onnx}:/models/clip-onnx:ro
+      # 图片目录
+      - ${IMAGE_DIR:-/opt/images}:/data/images:ro
     restart: unless-stopped
 
 volumes:
