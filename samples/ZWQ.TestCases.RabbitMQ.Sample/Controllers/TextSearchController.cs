@@ -45,17 +45,27 @@ public sealed class TextSearchController : ControllerBase
     }
 
     /// <summary>
-    /// 搜索关键词 - 在已索引的文本中搜索一个或多个关键词
+    /// 搜索关键词 - 在已索引的文本中搜索一个或多个关键词。
+    /// 若尚未构建索引且提供了 FilePath，会自动先构建索引再搜索。
     /// </summary>
-    /// <param name="request">搜索请求：关键词列表 + 是否区分大小写</param>
+    /// <param name="request">搜索请求：关键词列表 + 文件路径（可选） + 是否区分大小写</param>
     [HttpPost("search")]
     public async Task<ActionResult<TextSearchSummary>> Search([FromBody] SearchRequest request)
     {
-        if (!_searchService.IsIndexBuilt)
-            return BadRequest("请先调用 POST /api/textsearch/build 构建索引");
-
         if (request.Keywords is null || request.Keywords.Count == 0)
             return BadRequest("至少提供一个关键词");
+
+        // 未建索引时，若提供了文件路径则自动构建
+        if (!_searchService.IsIndexBuilt)
+        {
+            if (string.IsNullOrWhiteSpace(request.FilePath))
+                return BadRequest("索引尚未构建，请在请求中提供 filePath 字段以自动构建索引");
+
+            if (!System.IO.File.Exists(request.FilePath))
+                return NotFound($"文件不存在: {request.FilePath}");
+
+            await _searchService.BuildIndexAsync(request.FilePath);
+        }
 
         var summary = await _searchService.SearchAsync(request.Keywords, request.CaseSensitive);
         return Ok(summary);
@@ -104,6 +114,11 @@ public class SearchRequest
     /// 要搜索的关键词列表
     /// </summary>
     public List<string> Keywords { get; set; } = new();
+
+    /// <summary>
+    /// 要索引的文件路径（可选）。首次调用时提供，自动构建索引；后续调用可省略。
+    /// </summary>
+    public string? FilePath { get; set; }
 
     /// <summary>
     /// 是否区分大小写（默认 false）
