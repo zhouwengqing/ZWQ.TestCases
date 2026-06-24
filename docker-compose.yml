@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  # ──────────────── 应用服务 ────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zwq-testcases
+    ports:
+      - "8080:8080"
+    environment:
+      # RabbitMQ 和 Redis 在本机运行，容器通过 host.docker.internal 访问
+      - RabbitMq__Host=host.docker.internal
+      - RabbitMq__Port=5672
+      - Redis__Host=host.docker.internal
+      - Redis__Port=6379
+      # Qdrant 在 Docker 内部
+      - Qdrant__Host=qdrant
+      - Qdrant__GrpcPort=6334
+      - Qdrant__HttpPort=6333
+      # CLIP 模型目录（挂载到容器内）
+      - ClipModel__ModelDirectory=/models/clip-onnx
+      # 图片目录
+      - VectorSearch__ImageDirectory=/data/images
+      # TextSearch 用户词典持久化路径
+      - TextSearch__UserDictionaryPath=/data/textsearch_user_dict.txt
+    volumes:
+      # SQLite 数据库持久化
+      - sqlite-data:/data
+      # CLIP ONNX 模型目录 — 把你本机的模型目录映射到这里
+      - D:/SW/Tools/clip-onnx:/models/clip-onnx:ro
+      # 图片目录 — 把你本机的图片目录映射到这里
+      - D:/Images:/data/images:ro
+    depends_on:
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+
+  # ──────────────── Qdrant (向量数据库) ────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: zwq-qdrant
+    ports:
+      - "6333:6333"  # HTTP REST
+      - "6334:6334"  # gRPC
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  sqlite-data:
+  qdrant-data:
