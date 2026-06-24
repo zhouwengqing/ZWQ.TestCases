@@ -19,60 +19,68 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Step 1
-Write-Host "[1/4] Stopping old containers..." -ForegroundColor Cyan
-docker-compose down --remove-orphans 2>$null
-Write-Host ""
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
 
-# Step 2
-Write-Host "[2/4] Building image (first time may take 2-3 min)..." -ForegroundColor Cyan
-docker-compose build --no-cache app
+# ── Step 1: Build new image (old container still running, zero downtime) ──
+Write-Host "[1/3] Building new image..." -ForegroundColor Cyan
+$buildStart = Get-Date
+docker-compose build app
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "[ERROR] Build failed" -ForegroundColor Red
     Read-Host "Press Enter to exit"
     exit 1
 }
+$buildSec = [math]::Round(((Get-Date) - $buildStart).TotalSeconds)
+Write-Host "      Build done in ${buildSec}s" -ForegroundColor DarkGray
 Write-Host ""
 
-# Step 3
-Write-Host "[3/4] Starting containers..." -ForegroundColor Cyan
-docker-compose up -d
+# ── Step 2: Quick swap (only this step has ~2s downtime) ──
+Write-Host "[2/3] Switching to new version..." -ForegroundColor Cyan
+$swapStart = Get-Date
+docker-compose up -d --force-recreate --remove-orphans app
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "[ERROR] Failed to start" -ForegroundColor Red
     Read-Host "Press Enter to exit"
     exit 1
 }
+$swapSec = [math]::Round(((Get-Date) - $swapStart).TotalSeconds)
+Write-Host "      Switched in ${swapSec}s" -ForegroundColor DarkGray
 Write-Host ""
 
-# Step 4
-Write-Host "[4/4] Cleaning old images..." -ForegroundColor Cyan
+# ── Step 3: Clean up ──
+Write-Host "[3/3] Cleaning old images..." -ForegroundColor Cyan
 docker image prune -f 2>$null | Out-Null
 Write-Host ""
 
-# Wait
-Write-Host "Waiting for app to start..."
-Start-Sleep -Seconds 5
+# ── Health check ──
+Write-Host "Waiting for app to start..." -ForegroundColor DarkGray
+$ready = $false
+for ($i = 1; $i -le 15; $i++) {
+    Start-Sleep -Seconds 1
+    try {
+        $r = Invoke-WebRequest -Uri "http://localhost:8080/api/textsearch/stats" -UseBasicParsing -TimeoutSec 2
+        if ($r.StatusCode -eq 200) {
+            $ready = $true
+            break
+        }
+    } catch {
+        Write-Host "  ... ($i s)" -ForegroundColor DarkGray
+    }
+}
 
-# Status
-docker-compose ps
+$totalSec = [math]::Round($sw.Elapsed.TotalSeconds)
 Write-Host ""
 
-# Health check
-try {
-    $r = Invoke-WebRequest -Uri "http://localhost:8080/api/textsearch/stats" -UseBasicParsing -TimeoutSec 10
-    if ($r.StatusCode -eq 200) {
-        Write-Host "[OK] App is ready!" -ForegroundColor Green
-    }
-} catch {
-    Write-Host "[WARN] App not ready yet, try refreshing browser in a few seconds" -ForegroundColor Yellow
+if ($ready) {
+    Write-Host "[OK] Deploy done in ${totalSec}s (downtime ~${swapSec}s)" -ForegroundColor Green
+} else {
+    Write-Host "[WARN] App not ready yet, check logs: docker-compose logs -f app" -ForegroundColor Yellow
 }
 
 Write-Host ""
 Write-Host "==================================================="
-Write-Host "  Deploy done!" -ForegroundColor Green
-Write-Host ""
 Write-Host "  Swagger:   http://localhost:8080"
 Write-Host "  Qdrant:    http://localhost:6333/dashboard"
 Write-Host ""
