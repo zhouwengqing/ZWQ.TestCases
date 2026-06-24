@@ -136,9 +136,9 @@ cd samples/ZWQ.TestCases.RabbitMQ.Sample
 dotnet run
 ```
 
-启动后访问 `http://localhost:5000` 打开 Swagger UI，即可测试所有接口。
+启动后访问 `http://localhost:8080` 打开 Swagger UI，即可测试所有接口。
 
-### 4. 配置（appsettings.json）
+### 5. 配置（appsettings.json）
 
 ```json
 {
@@ -410,6 +410,106 @@ var results = await qdrant.SearchAsync(embedding, topK: 10);
 - Redis 5.x+
 - Qdrant 1.18+（Docker 或 Windows 可执行文件）
 - CLIP ViT-B/32 ONNX 模型（需 Python 导出一次）
+
+## Docker 部署
+
+### 架构
+
+```
+开发机 (Windows)                      阿里云 Registry (Ubuntu)
+┌─────────────────┐                  ┌──────────────────┐
+│  dotnet build    │   docker push   │  registry:2       │
+│  docker build    │ ──────────────→ │  :5000            │
+│  deploy.bat      │                  │  (htpasswd auth)  │
+└────────┬────────┘                  └────────┬─────────┘
+         │ docker pull                        │
+         ▼                                    ▼
+  ┌──────────────┐                  ┌──────────────────┐
+  │  本机容器     │                  │  生产服务器容器    │
+  │  :8080       │                  │  :8080            │
+  └──────────────┘                  └──────────────────┘
+```
+
+所有机器统一从私有 Registry 拉取镜像运行，不区分本地和服务器。
+
+### 一键部署（开发机）
+
+```bash
+deploy.bat                          # 构建 → 推送 Registry → 拉取 → 启动
+deploy.bat -Version 20260625_1.0   # 带自定义版本号标签
+deploy.bat -NoPush                  # 仅本地部署，不推送 Registry
+deploy.bat rollback                 # 回滚到上一次部署
+```
+
+### 部署到生产服务器
+
+目标服务器只需 Docker，不需要源码和 .NET SDK：
+
+```bash
+# 1. 登录 Registry（首次）
+docker login <registry-ip>:5000 -u <user>
+
+# 2. 创建 .env（配置本机路径）
+cat > .env << 'EOF'
+CLIP_MODEL_DIR=/opt/models/clip-onnx
+IMAGE_DIR=/opt/images
+APP_ENV=Production
+EOF
+
+# 3. 拉取并启动
+docker compose pull && docker compose up -d
+```
+
+### 常用脚本
+
+| 脚本 | 说明 |
+|------|------|
+| `deploy.bat` | 一键部署（构建 + 推送 + 启动） |
+| `deploy.bat rollback` | 回滚到上一次版本 |
+| `tags.bat` | 查看 Registry 中的镜像标签列表 |
+| `ssh-server.bat` | SSH 连接到服务器 |
+
+## 路线图（Roadmap）
+
+### 当前阶段：单体应用
+
+所有模块集成在一个 ASP.NET Core Web API 中，通过 `services.AddXxx()` 按需注册。适合开发测试和小规模部署。
+
+### 下一阶段：微服务拆分
+
+计划将各模块拆分为独立微服务，每个服务独立部署、独立扩展：
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    API Gateway                       │
+│              (YARP / Ocelot / Kong)                  │
+└──────┬──────┬──────┬──────┬──────┬──────────────────┘
+       │      │      │      │      │
+       ▼      ▼      ▼      ▼      ▼
+  ┌──────┐┌──────┐┌──────┐┌──────┐┌──────┐
+  │Order ││Pay   ││Vector││Text  ││User  │
+  │Svc   ││Svc   ││Svc   ││Svc   ││Svc   │
+  │      ││      ││      ││      ││      │
+  │MQ    ││策略   ││Qdrant││Jieba ││Auth  │
+  │Redis ││工厂   ││CLIP  ││索引   ││JWT   │
+  └──────┘└──────┘└──────┘└──────┘└──────┘
+```
+
+**拆分策略：**
+
+- **Order Service** — RabbitMQ 订单消息 + Redis 缓存 + 幂等处理
+- **Payment Service** — 策略模式 + 工厂模式，独立支付渠道接入
+- **Vector Search Service** — Qdrant + CLIP，独立的 GPU/ONNX 推理服务
+- **Text Search Service** — Jieba 分词 + 倒排索引，独立的搜索服务
+- **User Service** — 用户认证 + JWT + 权限管理
+
+**基础设施：**
+
+- API Gateway（路由 + 限流 + 认证）
+- 服务发现（Consul / etcd）
+- 配置中心（Apollo / Nacos）
+- 链路追踪（OpenTelemetry + Jaeger）
+- 日志聚合（ELK / Loki）
 
 ## 许可证
 
