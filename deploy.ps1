@@ -35,6 +35,21 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+# Check .env
+$envFile = Join-Path $scriptDir ".env"
+if (-not (Test-Path $envFile)) {
+    Write-Host "[WARN] .env not found, creating default..." -ForegroundColor Yellow
+    @"
+# Docker 本机环境配置（每台机器路径可能不同，按需修改）
+CLIP_MODEL_DIR=D:/SW/Tools/clip-onnx
+IMAGE_DIR=D:/Images
+APP_ENV=Docker
+"@ | Out-File -FilePath $envFile -Encoding UTF8
+    Write-Host "      Created: $envFile" -ForegroundColor DarkGray
+    Write-Host "      Please check paths are correct!" -ForegroundColor Yellow
+    Write-Host ""
+}
+
 # ── Helper: list backup tags sorted by time (newest first) ──
 function Get-BackupTags {
     docker images "$ImageName" --format "{{.Tag}}" 2>$null |
