@@ -1,6 +1,7 @@
 param(
     [switch]$Rollback,
-    [switch]$NoPush
+    [switch]$NoPush,
+    [string]$Version = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -161,16 +162,28 @@ Write-Host ""
 
 # ── Step 3: Push to Registry ──
 if (-not $NoPush) {
+    # Generate version tag: use -Version param, or auto-generate date-based
+    $versionTag = if ($Version) { $Version } else { Get-Date -Format "yyyyMMdd_HHmm" }
+
     Write-Host "[3/5] Pushing to Registry ($RegistryUrl)..." -ForegroundColor Cyan
+    Write-Host "      Tags: latest, $versionTag" -ForegroundColor DarkGray
     $pushStart = Get-Date
+
+    # Push latest
     docker tag "${ImageName}:latest" "${RegistryImage}:latest"
     docker push "${RegistryImage}:latest"
     if ($LASTEXITCODE -eq 0) {
+        # Push version tag
+        docker tag "${ImageName}:latest" "${RegistryImage}:${versionTag}"
+        docker push "${RegistryImage}:${versionTag}" 2>$null | Out-Null
+
+        # Push git commit hash
         $commitHash = (git rev-parse --short HEAD 2>$null).Trim()
         if ($commitHash) {
             docker tag "${ImageName}:latest" "${RegistryImage}:${commitHash}"
             docker push "${RegistryImage}:${commitHash}" 2>$null | Out-Null
         }
+
         $pushSec = [math]::Round(((Get-Date) - $pushStart).TotalSeconds)
         Write-Host "      Pushed in ${pushSec}s" -ForegroundColor DarkGray
     } else {
@@ -241,9 +254,11 @@ Write-Host ""
 Write-Host "==================================================="
 Write-Host "  Swagger:   http://localhost:8080"
 Write-Host "  Qdrant:    http://localhost:6333/dashboard"
-Write-Host "  Registry:  http://${RegistryUrl}/v2/_catalog"
+Write-Host "  Registry:  http://${RegistryUrl}"
 Write-Host ""
+Write-Host "  Tags:      tags.bat"
 Write-Host "  Rollback:  deploy.bat rollback"
+Write-Host "  Version:   deploy.bat -Version 20260625_1.0"
 Write-Host "  No push:   deploy.bat -NoPush"
 Write-Host "  Logs:      docker-compose logs -f app"
 Write-Host "  Stop:      docker-compose down"
