@@ -27,10 +27,23 @@ public sealed class TextTokenizer
 
         EnsureUserDictFile();
 
-        _segmenter = new JiebaSegmenter();
+        // Jieba.NET ConfigManager 用相对路径 "Resources\dict.txt" 查找词典，
+        // 基于当前工作目录。VS / dotnet run 启动时工作目录是项目根目录，
+        // 而 Resources 在 bin 输出目录。临时切换到程序集所在目录解决此问题。
+        var originalDir = Environment.CurrentDirectory;
+        var assemblyDir = AppContext.BaseDirectory;
+        try
+        {
+            Environment.CurrentDirectory = assemblyDir;
+            _segmenter = new JiebaSegmenter();
 
-        // 加载用户词典（必须在创建 JiebaSegmenter 之后调用）
-        _segmenter.LoadUserDict(_userDictPath);
+            // 加载用户词典（必须在创建 JiebaSegmenter 之后调用）
+            _segmenter.LoadUserDict(_userDictPath);
+        }
+        finally
+        {
+            Environment.CurrentDirectory = originalDir;
+        }
 
         // 加载已有用户词典中的词到运行时集合
         LoadExistingUserDictWords();
