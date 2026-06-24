@@ -1,5 +1,6 @@
 param(
-    [switch]$Rollback
+    [switch]$Rollback,
+    [switch]$NoPush
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,6 +12,8 @@ Set-Location $scriptDir
 $ImageName = "mq-app"
 $ContainerName = "zwq-testcases"
 $MaxBackups = 3
+$RegistryUrl = "47.106.235.211:5000"
+$RegistryImage = "$RegistryUrl/zwq/$ImageName"
 
 Write-Host ""
 if ($Rollback) {
@@ -119,16 +122,16 @@ $currentImage = docker inspect "${ImageName}:latest" --format "{{.Id}}" 2>$null
 if ($currentImage) {
     $timestamp = Get-Date -Format "yyyyMMdd-HHmm"
     $backupTag = "backup-$timestamp"
-    Write-Host "[1/4] Backing up current image -> $backupTag" -ForegroundColor Cyan
+    Write-Host "[1/5] Backing up current image -> $backupTag" -ForegroundColor Cyan
     docker tag "${ImageName}:latest" "${ImageName}:${backupTag}"
     Remove-OldBackups
 } else {
-    Write-Host "[1/4] No existing image, skip backup" -ForegroundColor DarkGray
+    Write-Host "[1/5] No existing image, skip backup" -ForegroundColor DarkGray
 }
 Write-Host ""
 
 # ── Step 2: Build new image (old container still running) ──
-Write-Host "[2/4] Building new image..." -ForegroundColor Cyan
+Write-Host "[2/5] Building new image..." -ForegroundColor Cyan
 $buildStart = Get-Date
 docker-compose build app
 if ($LASTEXITCODE -ne 0) {
@@ -141,8 +144,33 @@ $buildSec = [math]::Round(((Get-Date) - $buildStart).TotalSeconds)
 Write-Host "      Build done in ${buildSec}s" -ForegroundColor DarkGray
 Write-Host ""
 
-# ── Step 3: Quick swap ──
-Write-Host "[3/4] Switching to new version..." -ForegroundColor Cyan
+# ── Step 3: Push to Registry ──
+if (-not $NoPush) {
+    Write-Host "[3/5] Pushing to Registry ($RegistryUrl)..." -ForegroundColor Cyan
+    $pushStart = Get-Date
+    # Tag with latest
+    docker tag "${ImageName}:latest" "${RegistryImage}:latest"
+    docker push "${RegistryImage}:latest"
+    if ($LASTEXITCODE -eq 0) {
+        # Also tag with git commit hash for traceability
+        $commitHash = (git rev-parse --short HEAD 2>$null).Trim()
+        if ($commitHash) {
+            docker tag "${ImageName}:latest" "${RegistryImage}:${commitHash}"
+            docker push "${RegistryImage}:${commitHash}" 2>$null | Out-Null
+        }
+        $pushSec = [math]::Round(((Get-Date) - $pushStart).TotalSeconds)
+        Write-Host "      Pushed in ${pushSec}s" -ForegroundColor DarkGray
+    } else {
+        Write-Host "      [WARN] Push failed, skipping (use -NoPush to suppress)" -ForegroundColor Yellow
+    }
+    Write-Host ""
+} else {
+    Write-Host "[3/5] Push skipped (-NoPush)" -ForegroundColor DarkGray
+    Write-Host ""
+}
+
+# ── Step 4: Quick swap ──
+Write-Host "[4/5] Switching to new version..." -ForegroundColor Cyan
 $swapStart = Get-Date
 docker-compose up -d --force-recreate --remove-orphans app
 if ($LASTEXITCODE -ne 0) {
@@ -155,8 +183,8 @@ $swapSec = [math]::Round(((Get-Date) - $swapStart).TotalSeconds)
 Write-Host "      Switched in ${swapSec}s" -ForegroundColor DarkGray
 Write-Host ""
 
-# ── Step 4: Clean dangling images ──
-Write-Host "[4/4] Cleaning dangling images..." -ForegroundColor Cyan
+# ── Step 5: Clean dangling images ──
+Write-Host "[5/5] Cleaning dangling images..." -ForegroundColor Cyan
 docker image prune -f 2>$null | Out-Null
 Write-Host ""
 
@@ -193,8 +221,10 @@ Write-Host ""
 Write-Host "==================================================="
 Write-Host "  Swagger:   http://localhost:8080"
 Write-Host "  Qdrant:    http://localhost:6333/dashboard"
+Write-Host "  Registry:  http://${RegistryUrl}/v2/_catalog"
 Write-Host ""
 Write-Host "  Rollback:  deploy.bat rollback"
+Write-Host "  No push:   deploy.bat -NoPush"
 Write-Host "  Logs:      docker-compose logs -f app"
 Write-Host "  Stop:      docker-compose down"
 Write-Host "==================================================="

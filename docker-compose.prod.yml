@@ -1,0 +1,27 @@
+# ============================================================
+# 生产服务器部署 — 从私有 Registry 拉取镜像（不需要源码）
+# ============================================================
+# 使用方法：
+#   1. 修改下面的路径为本机实际路径
+#   2. docker compose pull
+#   3. docker compose up -d
+# ============================================================
+
+services:
+  app:
+    image: 47.106.235.211:5000/zwq/mq-app:latest
+    container_name: zwq-testcases
+    ports:
+      - "8080:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+    volumes:
+      - sqlite-data:/data
+      # CLIP ONNX 模型目录 — 改成本机实际路径
+      - /opt/models/clip-onnx:/models/clip-onnx:ro
+      # 图片目录 — 改成本机实际路径
+      - /opt/images:/data/images:ro
+    restart: unless-stopped
+
+volumes:
+  sqlite-data:
