@@ -12,3 +12,5 @@ obj/
 
 ## Docker 本机环境配置（每台机器路径不同，不提交）
 .env
+tags.bat
+tags.ps1
